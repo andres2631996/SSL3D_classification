@@ -29,37 +29,37 @@ from regularization.sam import SAM
 
 class BaseModel(L.LightningModule):
     def __init__(
-            self,
-            task,
-            metric_computation_mode,
-            result_plot,
-            metrics,
-            num_classes,
-            name,
-            lr,
-            weight_decay,
-            optimizer,
-            nesterov,
-            sam,
-            adaptive_sam,
-            scheduler,
-            T_max,
-            warmstart,
-            epochs,
-            mixup,
-            mixup_alpha,
-            label_smoothing,
-            stochastic_depth,
-            resnet_dropout,
-            squeeze_excitation,
-            apply_shakedrop,
-            undecay_norm,
-            zero_init_residual,
-            input_dim,
-            input_channels,
-            pretrained,
-            *args,
-            **kwargs
+        self,
+        task,
+        metric_computation_mode,
+        result_plot,
+        metrics,
+        num_classes,
+        name,
+        lr,
+        weight_decay,
+        optimizer,
+        nesterov,
+        sam,
+        adaptive_sam,
+        scheduler,
+        T_max,
+        warmstart,
+        epochs,
+        mixup,
+        mixup_alpha,
+        label_smoothing,
+        stochastic_depth,
+        resnet_dropout,
+        squeeze_excitation,
+        apply_shakedrop,
+        undecay_norm,
+        zero_init_residual,
+        input_dim,
+        input_channels,
+        pretrained,
+        *args,
+        **kwargs
     ):
         super(BaseModel, self).__init__()
 
@@ -227,6 +227,7 @@ class BaseModel(L.LightningModule):
     def training_step(self, batch, batch_idx):
 
         x, y = batch
+        y = y.float()
 
         if self.mixup:
             inputs, targets_a, targets_b, lam = mixup_data(x, y, alpha=self.mixup_alpha)
@@ -309,6 +310,9 @@ class BaseModel(L.LightningModule):
                 elif self.subtask == "multiclass":
                     self.train_metrics.update(F.softmax(y_hat.detach(), dim=-1), y)
             else:
+                if self.num_classes == 1:
+                    y = y.flatten()
+                    y_hat = y_hat.flatten()
                 self.train_metrics.update(y_hat.detach(), y)
 
         if hasattr(self, "train_conf_mat"):
@@ -320,6 +324,7 @@ class BaseModel(L.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
+
         x, y = batch
         y_hat = self(x)
 
@@ -362,7 +367,6 @@ class BaseModel(L.LightningModule):
                     self.val_metrics.update(F.softmax(y_hat.detach(), dim=-1), y)
             else:
                 self.val_metrics.update(y_hat.detach(), y)
-
 
         if hasattr(self, "val_conf_mat"):
             self.val_conf_mat.update(y_hat, y)
@@ -452,25 +456,38 @@ class BaseModel(L.LightningModule):
 
                     if self.task == "Classification":
                         columns = (
-                                      (["GT_" + str(i) for i in range(len(labels_all[0]))])
-                                      if self.subtask == "multilabel"
-                                      else ["GT"]
-                                  ) + ["Pred_" + str(i) for i in range(len(preds_all[0]))]
+                            (["GT_" + str(i) for i in range(len(labels_all[0]))])
+                            if self.subtask == "multilabel"
+                            else ["GT"]
+                        ) + ["Pred_" + str(i) for i in range(len(preds_all[0]))]
                         data = [
                             (
-                                    (x.tolist() if self.subtask == "multilabel" else [x])
-                                    + (
-                                        F.softmax(y, dim=-1)
-                                        if self.subtask == "multiclass"
-                                        else torch.sigmoid(y)
-                                    ).tolist()
+                                (x.tolist() if self.subtask == "multilabel" else [x])
+                                + (
+                                    F.softmax(y, dim=-1)
+                                    if self.subtask == "multiclass"
+                                    else torch.sigmoid(y)
+                                ).tolist()
                             )
                             for x, y in zip(labels_all, preds_all)
                         ]
                         table = wandb.Table(data=data, columns=columns)
                         wandb.log({"Val Predictions": table})
-                    else:
-                        raise NotImplementedError
+                    elif self.task == "Regression":
+                        data = [[x, y] for (x, y) in zip(labels_all, preds_all)]
+                        table = wandb.Table(
+                            data=data, columns=["Ground Truth", "Prediction"]
+                        )
+                        wandb.log(
+                            {
+                                "Val Scatterplot": wandb.plot.scatter(
+                                    table,
+                                    "Ground Truth",
+                                    "Prediction",
+                                    "Validation Scatterplot",
+                                )
+                            }
+                        )
 
             # reset
             self.val_preds.reset()
@@ -829,7 +846,7 @@ class CosineAnnealingLR_Warmstart(_LRScheduler):
     """
 
     def __init__(
-            self, optimizer, T_max, eta_min=0, last_epoch=-1, verbose=False, warmstart=0
+        self, optimizer, T_max, eta_min=0, last_epoch=-1, verbose=False, warmstart=0
     ):
         self.T_max = T_max - warmstart  # do not consider warmstart epochs for T_max
         self.eta_min = eta_min
@@ -837,7 +854,8 @@ class CosineAnnealingLR_Warmstart(_LRScheduler):
         self.T = 0
 
         super(CosineAnnealingLR_Warmstart, self).__init__(
-            optimizer, last_epoch,
+            optimizer,
+            last_epoch,
         )
 
     def get_lr(self):
@@ -897,14 +915,14 @@ class CosineAnnealingLR_DoubleWarmstart(_LRScheduler):
     """
 
     def __init__(
-            self,
-            optimizer,
-            T_max,
-            eta_min=0,
-            last_epoch=-1,
-            verbose=False,
-            warmstart1=0,
-            warmstart2=0,
+        self,
+        optimizer,
+        T_max,
+        eta_min=0,
+        last_epoch=-1,
+        verbose=False,
+        warmstart1=0,
+        warmstart2=0,
     ):
         self.warmstart1 = warmstart1
         self.warmstart2 = warmstart2
@@ -928,7 +946,8 @@ class CosineAnnealingLR_DoubleWarmstart(_LRScheduler):
             raise ValueError("Optimizer must have a parameter group named 'encoder'.")
 
         super(CosineAnnealingLR_DoubleWarmstart, self).__init__(
-            optimizer, last_epoch,
+            optimizer,
+            last_epoch,
         )
 
     def get_lr(self):

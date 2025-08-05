@@ -33,7 +33,7 @@ class fomo3Dataset(Dataset):
         t1_img, t2_img = blosc2.open(t1_path)[:], blosc2.open(t2_path)[:]
 
         # Concatenate both images
-        img = torch.tensor(np.concatenate([t1_img, t2_img], axis=0))
+        img = torch.tensor(np.concatenate([t1_img, t2_img], axis=0), dtype=torch.float)
 
         # Return label
         label = self.labels[self.ids[idx]]
@@ -69,7 +69,7 @@ class fomo3Dataset(Dataset):
             plt.show()
             """
 
-        return img, label
+        return img, float(label)
 
 
 class Fomo3DataModule(BaseDataModule):
