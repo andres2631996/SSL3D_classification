@@ -1,5 +1,6 @@
 from pathlib import Path
 import os
+from lightning.pytorch.callbacks import ModelCheckpoint
 
 import hydra
 import wandb
@@ -7,7 +8,7 @@ from hydra.utils import instantiate
 from lightning.pytorch import seed_everything
 from omegaconf import OmegaConf
 import torch
-
+from checkpointing import restore_best_score
 from parsing_utils import make_omegaconf_resolvers
 
 
@@ -19,6 +20,13 @@ def main(cfg):
         seed_everything(cfg.seed)
         cfg.trainer.benchmark = False
         cfg.trainer.deterministic = True
+
+    experiment_name = cfg.name
+
+    # Set up output folder
+    output_dir = os.path.join(cfg.exp_dir, experiment_name)
+    if not (os.path.exists(output_dir)):
+        os.makedirs(output_dir)
 
     # setup logger
     try:
@@ -50,6 +58,9 @@ def main(cfg):
 
     # in case of Cross Validation loop over the folds (default is 1 (no Cross Validation))
     for k in range(cfg.data.cv.k):
+        output_fold_dir = os.path.join(output_dir, f"fold{k}")
+        if not (os.path.exists(output_fold_dir)):
+            os.makedirs(output_fold_dir)
         if cfg.data.cv.k > 1:
             cfg.data.module.fold = k
         else:
@@ -69,9 +80,26 @@ def main(cfg):
                         str(cfg.data.module.fold),
                     )
 
+        # set up model checkpoint
+        ckpt_path = os.path.join(output_fold_dir, f"model_best.ckpt")
+        checkpoint_callback = ModelCheckpoint(
+            monitor=f"Val/{cfg.monitor.metric}",
+            mode=cfg.monitor.mode,
+            save_top_k=1,
+            filename=ckpt_path,
+            save_weights_only=False,
+            save_last=True,
+        )
+
+        restore_ckpt = None
+        if os.path.exists(ckpt_path) and not (cfg.overwrite):
+            restore_best_score(checkpoint_callback, ckpt_path)
+            restore_ckpt = ckpt_path
+
         # instantiate trainer, model and dataset
-        trainer = instantiate(cfg.trainer)
-        model = instantiate(cfg.model)
+        trainer = instantiate(cfg.trainer, callbacks=[checkpoint_callback])
+        model = instantiate(cfg.model, output_folder=output_fold_dir)
+
         if cfg.model.compile:
             model = torch.compile(model, mode="default")
         dataset = instantiate(cfg.data).module
@@ -88,13 +116,13 @@ def main(cfg):
         if cfg_dict["data"]["module"]["train_transforms"] is not None:
             cfg_dict["data"]["module"]["train_transforms"] = ".".join(
                 cfg_dict["data"]["module"]["train_transforms"]["_target_"].split(".")[
-                -2:
+                    -2:
                 ]
             )
         if cfg_dict["data"]["module"]["test_transforms"] is not None:
             cfg_dict["data"]["module"]["test_transforms"] = ".".join(
                 cfg_dict["data"]["module"]["test_transforms"]["_target_"].split(".")[
-                -2:
+                    -2:
                 ]
             )
         cfg_dict["data"]["module"].pop("name")
@@ -113,7 +141,7 @@ def main(cfg):
         if cfg_dict["val_only"]:
             trainer.validate(model, dataset)
         else:
-            trainer.fit(model, dataset)
+            trainer.fit(model, dataset, ckpt_path=restore_ckpt)
 
         wandb.finish()
 

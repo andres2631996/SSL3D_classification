@@ -1,9 +1,10 @@
 import math
 import warnings
-
+import os, sys
 import lightning as L
 import torch
 import torch.nn as nn
+import numpy as np
 import wandb
 from madgrad import MADGRAD
 from timm.optim import RMSpropTF
@@ -20,11 +21,13 @@ from torchmetrics import (
     Precision,
     Recall,
 )
+from torchmetrics.regression import SpearmanCorrCoef
 from torchmetrics.aggregation import CatMetric
 from metrics.balanced_accuracy import BalancedAccuracy
 from augmentation.mixup import mixup_criterion, mixup_data
 from metrics.conf_mat import ConfusionMatrix
 from regularization.sam import SAM
+from batchgenerators.utilities.file_and_folder_operations import save_json
 
 
 class BaseModel(L.LightningModule):
@@ -58,13 +61,15 @@ class BaseModel(L.LightningModule):
         input_dim,
         input_channels,
         pretrained,
+        output_folder,
         *args,
-        **kwargs
+        **kwargs,
     ):
         super(BaseModel, self).__init__()
 
         # Task
         self.task = task
+        self.output_folder = output_folder
 
         # Metrics
         self.metric_computation_mode = metric_computation_mode
@@ -145,6 +150,8 @@ class BaseModel(L.LightningModule):
                 metrics_dict["MSE"] = MeanSquaredError()
             if "mae" in metrics:
                 metrics_dict["MAE"] = MeanAbsoluteError()
+            if "r" in metrics:
+                metrics_dict["R"] = SpearmanCorrCoef()
 
         if self.result_plot_setting in ["val", "all"]:
             if self.task == "Classification":
@@ -226,7 +233,7 @@ class BaseModel(L.LightningModule):
 
     def training_step(self, batch, batch_idx):
 
-        x, y = batch
+        x, y, id = batch
         y = y.float()
 
         if self.mixup:
@@ -323,9 +330,12 @@ class BaseModel(L.LightningModule):
 
         return loss
 
+    def on_validation_epoch_start(self):
+        self.val_ids = []
+
     def validation_step(self, batch, batch_idx):
 
-        x, y = batch
+        x, y, id = batch
         y_hat = self(x)
 
         if self.num_classes == 1:
@@ -382,6 +392,7 @@ class BaseModel(L.LightningModule):
             self.val_preds.update(y_hat.detach())
             self.val_labels.update(y.detach())
             self.val_indices.update(idx)
+            self.val_ids += id
 
     def predict_step(self, batch, batch_idx):
 
@@ -435,12 +446,17 @@ class BaseModel(L.LightningModule):
             if self.trainer.is_global_zero:
                 # Sort by original index to preserve dataset order
                 sorted_idx = torch.argsort(indices)
+                self.val_ids = np.array(self.val_ids, dtype=str)
+                indices_all = indices[sorted_idx]
                 preds_all = preds_all[sorted_idx]
                 labels_all = labels_all[sorted_idx]
+                ids_all = self.val_ids[sorted_idx.cpu().detach().numpy()]
                 if self.task == "Regression":
                     data = [[x, y] for (x, y) in zip(labels_all, preds_all)]
+
+                    """
                     table = wandb.Table(
-                        data=data, columns=["Ground Truth", "Prediction"]
+                        data=data, columns=["ID", "Ground Truth", "Prediction"]
                     )
                     wandb.log(
                         {
@@ -452,6 +468,7 @@ class BaseModel(L.LightningModule):
                             )
                         }
                     )
+                    """
                 if self.save_preds:
 
                     if self.task == "Classification":
@@ -474,9 +491,28 @@ class BaseModel(L.LightningModule):
                         table = wandb.Table(data=data, columns=columns)
                         wandb.log({"Val Predictions": table})
                     elif self.task == "Regression":
-                        data = [[x, y] for (x, y) in zip(labels_all, preds_all)]
+                        data = [
+                            [i, x, y]
+                            for (i, x, y) in zip(ids_all, labels_all, preds_all)
+                        ]
+                        # Save validation results
+                        data_json = [
+                            {i: [x.item(), y.item()]}
+                            for (i, x, y) in zip(ids_all, labels_all, preds_all)
+                        ]
+                        # Extend with metrics
+                        metrics_keys = list(metrics_res.keys())
+                        for k in metrics_keys:
+                            data_json.append({k: metrics_res[k].item()})
+                        val_json_file = os.path.join(
+                            self.output_folder,
+                            f"val_preds_epoch{self.current_epoch}.json",
+                        )
+                        save_json(data_json, val_json_file)
+
+                        """
                         table = wandb.Table(
-                            data=data, columns=["Ground Truth", "Prediction"]
+                            data=data, columns=["ID", "Ground Truth", "Prediction"]
                         )
                         wandb.log(
                             {
@@ -488,11 +524,14 @@ class BaseModel(L.LightningModule):
                                 )
                             }
                         )
+                        """
 
             # reset
             self.val_preds.reset()
             self.val_labels.reset()
             self.val_indices.reset()
+
+            self.val_ids = []
 
     def on_train_epoch_end(self) -> None:
         if self.metric_computation_mode == "epochwise":
