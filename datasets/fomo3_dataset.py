@@ -31,10 +31,12 @@ class fomo3Dataset(Dataset):
     def __getitem__(self, idx):
         t1_path = os.path.join(self.data_path, f"{self.ids[idx]}_0000.b2nd")
         t2_path = os.path.join(self.data_path, f"{self.ids[idx]}_0001.b2nd")
-        t1_img, t2_img = blosc2.open(t1_path)[:], blosc2.open(t2_path)[:]
+        # t1_img = blosc2.open(t1_path)[:]
+        t2_img = blosc2.open(t2_path)[:]
 
         # Concatenate both images
-        img = torch.tensor(np.concatenate([t1_img, t2_img], axis=0), dtype=torch.float)
+        # img = torch.tensor(np.concatenate([t1_img, t2_img], axis=0), dtype=torch.float)
+        img = torch.tensor(t2_img)
 
         # Return label
         label = self.labels[self.ids[idx]]
