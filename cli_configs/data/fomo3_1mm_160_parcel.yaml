@@ -1,0 +1,50 @@
+# @package _global_
+data:
+  module:
+    _target_: datasets.fomo3_dataset.Fomo3DataModule
+    name: fomo3_1mm_160_parcel
+    data_root_dir: ${data_dir}/preprocess_isoSize160_spacing_parcels
+    batch_size: 4
+    train_transforms:
+      _target_: augmentation.policies.batchgenerators.get_training_transforms
+      patch_size: ${data.patch_size}
+      rotation_for_DA: 0.523599
+      mirror_axes: [0,1,2]
+      do_dummy_2d_data_aug: False
+    test_transforms: null
+  cv:
+    k: 5
+
+  num_classes: 1
+  patch_size: [160, 160, 160]
+
+model:
+  task: 'Regression'
+  cifar_size: False
+  input_channels: 3
+  input_dim: 3
+  input_shape: ${data.patch_size}
+  optimizer: AdamW
+  lr: 0.01
+  warmstart: 0
+  weight_decay: 1e-2
+  label_smoothing: 0.2
+
+trainer:
+  logger:
+    project: fomo3_1mm_160_parcel
+  enable_checkpointing: True
+accumulate_grad_batches: 48
+max_epochs: 1000
+sync_batchnorm: True
+
+metrics:
+- 'mse'
+- 'mae'
+- 'r'
+
+monitor:
+  metric: MAE
+  mode: min
+  
+overwrite: True
