@@ -41,6 +41,9 @@ class fomo3Dataset(Dataset):
         img = torch.tensor(
             np.concatenate([t1_img, t2_img, label_img], axis=0), dtype=torch.float
         )
+        # img = torch.tensor(
+        #    np.concatenate([t1_img, label_img], axis=0), dtype=torch.float
+        # )
         # img = torch.tensor(t1_img)
 
         # Return label
