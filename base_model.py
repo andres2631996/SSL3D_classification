@@ -28,6 +28,7 @@ from augmentation.mixup import mixup_criterion, mixup_data
 from metrics.conf_mat import ConfusionMatrix
 from regularization.sam import SAM
 from batchgenerators.utilities.file_and_folder_operations import save_json
+from loss_utils import WeightedMSE
 
 
 class BaseModel(L.LightningModule):
@@ -77,6 +78,8 @@ class BaseModel(L.LightningModule):
         metrics_dict = {}
 
         self.subtask = kwargs["subtask"]
+
+        self.bins = np.arange(20, 91, 10)  # default
 
         if self.subtask == "multiclass":
             metric_task = "multiclass"
@@ -226,7 +229,8 @@ class BaseModel(L.LightningModule):
             elif self.subtask == "multilabel":
                 self.criterion = nn.BCEWithLogitsLoss()
         elif self.task == "Regression":
-            self.criterion = nn.MSELoss()
+            # self.criterion = nn.MSELoss()
+            self.criterion = WeightedMSE(bins=self.bins)
 
     def forward(self, x):
         pass
