@@ -99,7 +99,12 @@ def load_pretrained_weights(
         )
     else:
         saved_model = torch.load(pretrained_weights_file, weights_only=True)
-    pretrained_dict = saved_model["network_weights"]
+
+    keys = saved_model.keys()
+    if "network_weights" in keys:
+        pretrained_dict = saved_model["network_weights"]
+    elif "state_dict" in keys:
+        pretrained_dict = saved_model["state_dict"]
 
     if isinstance(resenc_model, DDP):
         mod = resenc_model.module
@@ -126,8 +131,10 @@ def load_pretrained_weights(
             f"your network: {in_channels_model}"
         )
 
-        repeated_weight_tensor = in_conv_weights_pretrained.repeat(
-            1, in_channels_model, 1, 1, 1) / in_channels_model
+        repeated_weight_tensor = (
+            in_conv_weights_pretrained.repeat(1, in_channels_model, 1, 1, 1)
+            / in_channels_model
+        )
         target_data_ptr = in_conv_weights_pretrained.data_ptr()
         for key, weights in pretrained_dict.items():
             if weights.data_ptr() == target_data_ptr:
