@@ -31,7 +31,8 @@ class fomo3Dataset(Dataset):
     def __getitem__(self, idx):
         t1_path = os.path.join(self.data_path, f"{self.ids[idx]}_0000.b2nd")
         # t2_path = os.path.join(self.data_path, f"{self.ids[idx]}_0001.b2nd")
-        label_path = os.path.join(self.data_path, f"{self.ids[idx]}_0002.b2nd")
+        # label_path = os.path.join(self.data_path, f"{self.ids[idx]}_0002.b2nd")
+        label_path = os.path.join(self.data_path, f"{self.ids[idx]}_0001.b2nd")
         t1_img = blosc2.open(t1_path)[:]
         # t2_img = blosc2.open(t2_path)[:]
         label_img = blosc2.open(label_path)[:]
