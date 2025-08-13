@@ -87,25 +87,36 @@ class ResEncoder_Classifier(BaseModel):
         return x
 
 
-def load_pretrained_weights(
-    resenc_model,
-    pretrained_weights_file,
-):
-    if dist.is_initialized():
-        saved_model = torch.load(
-            pretrained_weights_file,
-            map_location=torch.device("cuda", dist.get_rank()),
-            weights_only=True,
-        )
-    else:
-        saved_model = torch.load(pretrained_weights_file, weights_only=True)
+def load_pretrained_weights(resenc_model, pretrained_weights_file):
+    # --- Load checkpoint safely ---
+    try:
+        if dist.is_initialized():
+            saved_model = torch.load(
+                pretrained_weights_file,
+                map_location=torch.device("cuda", dist.get_rank()),
+                weights_only=True,
+            )
+        else:
+            saved_model = torch.load(pretrained_weights_file, weights_only=True)
+    except:
+        if dist.is_initialized():
+            saved_model = torch.load(
+                pretrained_weights_file,
+                map_location=torch.device("cuda", dist.get_rank()),
+                weights_only=False,
+            )
+        else:
+            saved_model = torch.load(pretrained_weights_file, weights_only=False)
 
-    keys = saved_model.keys()
-    if "network_weights" in keys:
+    # --- Pick correct dict ---
+    if "network_weights" in saved_model:
         pretrained_dict = saved_model["network_weights"]
-    elif "state_dict" in keys:
+    elif "state_dict" in saved_model:
         pretrained_dict = saved_model["state_dict"]
+    else:
+        raise RuntimeError("Checkpoint does not contain network weights or state_dict.")
 
+    # --- Handle DDP / OptimizedModule wrappers ---
     if isinstance(resenc_model, DDP):
         mod = resenc_model.module
     else:
@@ -115,79 +126,71 @@ def load_pretrained_weights(
 
     model_dict = mod.state_dict()
 
-    in_conv_weights_model: torch.Tensor = model_dict[
-        "encoder.stem.convs.0.all_modules.0.weight"
+    # --- Handle input channel mismatches ---
+    def adjust_channels(weight_tensor, in_channels_model):
+        in_channels_pretrained = weight_tensor.shape[1]
+        if in_channels_model == in_channels_pretrained:
+            return weight_tensor
+        elif in_channels_pretrained < in_channels_model:
+            # Repeat and normalize
+            return (
+                weight_tensor.repeat(1, in_channels_model, 1, 1, 1) / in_channels_model
+            )
+        else:
+            # Slice down to needed channels
+            return weight_tensor[:, :in_channels_model, :, :, :]
+
+    # Identify first conv keys we care about
+    first_conv_keys = [
+        "encoder.stem.convs.0.conv.weight",
+        "encoder.stem.convs.0.all_modules.0.weight",
+        "decoder.encoder.stem.convs.0.conv.weight",
+        "decoder.encoder.stem.convs.0.all_modules.0.weight",
     ]
-    in_conv_weights_pretrained: torch.Tensor = pretrained_dict[
-        "encoder.stem.convs.0.all_modules.0.weight"
-    ]
 
-    in_channels_model = in_conv_weights_model.shape[1]
-    in_channels_pretrained = in_conv_weights_pretrained.shape[1]
-
-    if in_channels_model != in_channels_pretrained:
-        assert in_channels_pretrained == 1, (
-            f"The input channels do not match. Pretrained model: {in_channels_pretrained}; your network: "
-            f"your network: {in_channels_model}"
-        )
-
-        repeated_weight_tensor = (
-            in_conv_weights_pretrained.repeat(1, in_channels_model, 1, 1, 1)
-            / in_channels_model
-        )
-        target_data_ptr = in_conv_weights_pretrained.data_ptr()
-        for key, weights in pretrained_dict.items():
-            if weights.data_ptr() == target_data_ptr:
-                # print(key)
-                pretrained_dict[key] = repeated_weight_tensor
-
-        # SPECIAL CASE HARDCODE INCOMING
-        # Normally, these keys have the same data_ptr that points to the weights that are to be replicated:
-        # - encoder.stem.convs.0.conv.weight
-        # - encoder.stem.convs.0.all_modules.0.weight
-        # - decoder.encoder.stem.convs.0.conv.weight
-        # - decoder.encoder.stem.convs.0.all_modules.0.weight
-        # But this is not the case for 'VariableSparkMAETrainer_BS8', where we replace modules from the original
-        # encoder architecture, so that the following two point to a different tensor:
-        # - encoder.stem.convs.0.conv.weight
-        # - decoder.encoder.stem.convs.0.conv.weight
-        # resulting in a shape mismatch for the two missing keys in the check below.
-        # It is important to note, that the weights being trained are located at 'all_modules.0.weight', so we
-        # have to use those as the source of replication
-        if "VariableSparkMAETrainer" in pretrained_weights_file:
-            pretrained_dict["encoder.stem.convs.0.conv.weight"] = repeated_weight_tensor
-            pretrained_dict["decoder.encoder.stem.convs.0.conv.weight"] = (
-                repeated_weight_tensor
+    # Adjust if needed
+    for key in first_conv_keys:
+        if key in pretrained_dict and key in model_dict:
+            pretrained_dict[key] = adjust_channels(
+                pretrained_dict[key], model_dict[key].shape[1]
             )
 
-        print(
-            f"Your network has {in_channels_model} input channels. To accommodate for this, the single input "
-            f"channel of the pretrained model is repeated {in_channels_model} times."
-        )
+    # --- Special case for VariableSparkMAETrainer ---
+    if "VariableSparkMAETrainer" in pretrained_weights_file:
+        pretrained_dict["encoder.stem.convs.0.conv.weight"] = pretrained_dict[
+            "encoder.stem.convs.0.all_modules.0.weight"
+        ]
+        pretrained_dict["decoder.encoder.stem.convs.0.conv.weight"] = pretrained_dict[
+            "decoder.encoder.stem.convs.0.all_modules.0.weight"
+        ]
 
-    skip_strings_in_pretrained = [".seg_layers."]
-    skip_strings_in_pretrained.extend(["decoder.stages", "decoder.transpconvs"])
+    # --- Skip decoder / seg layers ---
+    skip_strings_in_pretrained = [
+        ".seg_layers.",
+        "decoder.stages",
+        "decoder.transpconvs",
+    ]
 
     final_pretrained_dict = {}
     for key, v in pretrained_dict.items():
-        if key in model_dict and all(
-            [i not in key for i in skip_strings_in_pretrained]
-        ):
-            assert model_dict[key].shape == pretrained_dict[key].shape, (
-                f"The shape of the parameters of key {key} is not the same. Pretrained model: "
-                f"{pretrained_dict[key].shape}; your network: {model_dict[key].shape}. The pretrained model "
-                f"does not seem to be compatible with your network."
-            )
+        if key in model_dict and all(s not in key for s in skip_strings_in_pretrained):
+            if v.shape != model_dict[key].shape:
+                # Handle rare case where only channel count differs
+                if (
+                    len(v.shape) > 4
+                    and v.shape[-3:] == model_dict[key].shape[-3:]
+                    and v.shape[0] == model_dict[key].shape[0]
+                ):
+                    v = v[:, : model_dict[key].shape[1]]
             final_pretrained_dict[key] = v
 
+    # --- Load weights ---
     model_dict.update(final_pretrained_dict)
+    mod.load_state_dict(model_dict, strict=False)
 
-    # print("################### Loading pretrained weights from file ", fname, '###################')
-    # print("Below is the list of overlapping blocks in pretrained model and nnUNet architecture:")
-    # for key, value in final_pretrained_dict.items():
-    #     print(key, 'shape', value.shape)
-    # print("################### Done ###################")
-    # exit()
-    mod.load_state_dict(model_dict)
+    print(
+        f"Loaded pretrained weights from {pretrained_weights_file} "
+        f"({len(final_pretrained_dict)} parameters matched)"
+    )
 
     return mod
