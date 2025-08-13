@@ -229,8 +229,8 @@ class BaseModel(L.LightningModule):
             elif self.subtask == "multilabel":
                 self.criterion = nn.BCEWithLogitsLoss()
         elif self.task == "Regression":
-            # self.criterion = nn.MSELoss()
-            self.criterion = WeightedMSE(bins=self.bins)
+            self.criterion = nn.MSELoss()
+            # self.criterion = WeightedMSE(bins=self.bins)
 
     def forward(self, x):
         pass
