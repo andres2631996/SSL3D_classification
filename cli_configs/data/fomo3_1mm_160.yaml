@@ -13,7 +13,7 @@ data:
       do_dummy_2d_data_aug: False
     test_transforms: null
   cv:
-    k: 1
+    k: 5
 
   num_classes: 1
   patch_size: [160, 160, 160]
