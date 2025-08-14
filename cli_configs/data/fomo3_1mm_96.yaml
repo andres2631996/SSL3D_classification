@@ -34,9 +34,9 @@ trainer:
   logger:
     project: fomo3_1mm_96
   enable_checkpointing: True
-accumulate_grad_batches: 48
-max_epochs: 1000
-sync_batchnorm: True
+  accumulate_grad_batches: 48
+  max_epochs: 1000
+  sync_batchnorm: True
 
 metrics:
 - 'mse'
