@@ -113,8 +113,15 @@ class Fomo3DataModule(BaseDataModule):
 
     def setup(self, stage: str):
         splits = self.split()
-        split = splits[self.params["fold"]]
-        train_ids, val_ids = split["train"], split["val"]
+        if isinstance(self.params["fold"], str):
+            # Run fold_all: train and validate with everything
+            train_ids = splits[0]["train"] + splits[0]["val"]
+            val_ids = splits[0]["train"] + splits[0]["val"]
+        else:
+            # Classical cross-validation
+            split = splits[self.params["fold"]]
+            train_ids, val_ids = split["train"], split["val"]
+
         self.train_dataset = fomo3Dataset(
             data_path=self.data_path,
             ids=train_ids,
