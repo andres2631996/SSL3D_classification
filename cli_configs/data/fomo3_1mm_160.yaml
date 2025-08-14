@@ -13,7 +13,7 @@ data:
       do_dummy_2d_data_aug: False
     test_transforms: null
   cv:
-    k: 5
+    k: 1
 
   num_classes: 1
   patch_size: [160, 160, 160]
@@ -35,7 +35,7 @@ trainer:
     project: fomo3_1mm_160
   enable_checkpointing: True
   accumulate_grad_batches: 48
-  max_epochs: 200
+  max_epochs: 1000
   sync_batchnorm: True
 
 metrics:
