@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
-from timm.layers import ClassifierHead
+
+# from timm.layers import ClassifierHead
 
 
 class ClassificationHead(nn.Module):
@@ -22,7 +23,13 @@ class ClassificationHead(nn.Module):
         """
         super(ClassificationHead, self).__init__()
 
-        self.fc = ClassifierHead(embed_dim, num_classes, "", dropout)
+        # self.fc = ClassifierHead(embed_dim, num_classes, "", dropout)
+        self.fc = nn.Sequential(
+            nn.Dropout(dropout),
+            nn.Linear(
+                embed_dim, num_classes
+            ),  # num_targets = 1 for single regression, >1 for multi-task
+        )
 
         self.patch_aggregation_method = patch_aggregation_method
         self.cls_token_available = cls_token_available
