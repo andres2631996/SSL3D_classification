@@ -241,7 +241,8 @@ def load_pretrained_weights(
 
     # For FOMO: [192, 192, 192]
     # For Openmind: [160, 160, 160]
-    pretrained_input_image_patch_size = [192, 192, 192]
+    # pretrained_input_image_patch_size = [192, 192, 192]
+    pretrained_input_image_patch_size = [160, 160, 160]
 
     """
     if 'nnssl_adaptation_plan' in saved_model.keys():
