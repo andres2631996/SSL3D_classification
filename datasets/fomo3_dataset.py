@@ -53,33 +53,6 @@ class fomo3Dataset(Dataset):
         # Apply transforms, if any
         if self.transform is not None:
             img = self.transform(**{"image": img})["image"]
-            """
-            plt.figure()
-            plt.subplot(321)
-            plt.imshow(img[0, img.shape[1] // 2].cpu().detach().numpy(), cmap="gray")
-            plt.colorbar()
-            plt.subplot(322)
-            plt.imshow(img[1, img.shape[1] // 2].cpu().detach().numpy(), cmap="gray")
-            plt.colorbar()
-            plt.subplot(323)
-            plt.imshow(img[0, :, img.shape[2] // 2].cpu().detach().numpy(), cmap="gray")
-            plt.colorbar()
-            plt.subplot(324)
-            plt.imshow(img[1, :, img.shape[2] // 2].cpu().detach().numpy(), cmap="gray")
-            plt.colorbar()
-            plt.subplot(325)
-            plt.imshow(
-                img[0, :, :, img.shape[3] // 2].cpu().detach().numpy(), cmap="gray"
-            )
-            plt.colorbar()
-            plt.subplot(326)
-            plt.imshow(
-                img[1, :, :, img.shape[3] // 2].cpu().detach().numpy(), cmap="gray"
-            )
-            plt.colorbar()
-            plt.suptitle(label)
-            plt.show()
-            """
 
         return img, float(label), self.ids[idx]
 
