@@ -125,8 +125,7 @@ class Eva_MAE(BaseModel):
                 ],
                 load_cls_token=hypparams["load_cls_token"],
                 input_shape=input_shape,
-                patch_embed_size=patch_embed_size
-
+                patch_embed_size=patch_embed_size,
             )
 
             if hypparams["finetune_method"] == "full":
@@ -187,8 +186,7 @@ def load_pretrained_weights(
     load_cls_token=True,
     verbose=True,
     input_shape=None,
-    patch_embed_size=None
-
+    patch_embed_size=None,
 ):
 
     # Load weights
@@ -206,10 +204,10 @@ def load_pretrained_weights(
 
     if isinstance(eva_model, DDP):
         mod = eva_model.module
-        mod.to('cuda')
+        mod.to("cuda")
     else:
         mod = eva_model
-        mod.to('cuda')
+        mod.to("cuda")
 
     if isinstance(mod, OptimizedModule):
         mod = mod._orig_mod
@@ -217,9 +215,7 @@ def load_pretrained_weights(
     # Initialize model state dictionary
     model_dict = mod.state_dict()
 
-    in_conv_weights_model: torch.Tensor = model_dict[
-        "down_projection.proj.weight"
-    ]
+    in_conv_weights_model: torch.Tensor = model_dict["down_projection.proj.weight"]
     in_conv_weights_pretrained: torch.Tensor = pretrained_dict[
         "down_projection.proj.weight"
     ]
@@ -233,15 +229,21 @@ def load_pretrained_weights(
             f"your network: {in_channels_model}"
         )
 
-        repeated_weight_tensor = in_conv_weights_pretrained.repeat(
-            1, in_channels_model, 1, 1, 1) / in_channels_model
+        repeated_weight_tensor = (
+            in_conv_weights_pretrained.repeat(1, in_channels_model, 1, 1, 1)
+            / in_channels_model
+        )
         target_data_ptr = in_conv_weights_pretrained.data_ptr()
         for key, weights in pretrained_dict.items():
             if weights.data_ptr() == target_data_ptr:
                 # print(key)
                 pretrained_dict[key] = repeated_weight_tensor
 
+    # For FOMO: [192, 192, 192]
+    # For Openmind: [160, 160, 160]
+    pretrained_input_image_patch_size = [192, 192, 192]
 
+    """
     if 'nnssl_adaptation_plan' in saved_model.keys():
         try:
             ##### if the pretrained model was trained by yourself this should work####
@@ -253,27 +255,25 @@ def load_pretrained_weights(
     else:
         print('############ no adaptation plan found in ckpt found. Assuming pretraining patch size [160 160 160]###############')
         pretrained_input_image_patch_size = [160, 160, 160]
+    """
 
     # adjust pos_embed if necessary
-    handle_pos_embed_resize(pretrained_dict=pretrained_dict,
-                            model_dict=model_dict,
-                            mode=handle_input_shape_mismatch,
-                            input_shape=input_shape,  # Only needed for trilinear
-                            pretrained_input_patch_size=pretrained_input_image_patch_size,
-                            patch_embed_size=patch_embed_size
-                            )
-
-
-
+    handle_pos_embed_resize(
+        pretrained_dict=pretrained_dict,
+        model_dict=model_dict,
+        mode=handle_input_shape_mismatch,
+        input_shape=input_shape,  # Only needed for trilinear
+        pretrained_input_patch_size=pretrained_input_image_patch_size,
+        patch_embed_size=patch_embed_size,
+    )
 
     # Filter out unnecessary keys based on match_encoder_only flag
     skip_strings_in_pretrained = [".seg_layers."]
     skip_strings_in_pretrained.append(".decoder.")
     skip_strings_in_pretrained.append("up_projection")
 
-    if not load_cls_token or 'eva.cls_token' not in pretrained_dict:
+    if not load_cls_token or "eva.cls_token" not in pretrained_dict:
         skip_strings_in_pretrained.append("eva.cls_token")
-
 
     # verify that all but the segmentation layers have the same shape
     for key, _ in model_dict.items():
@@ -314,6 +314,7 @@ def load_pretrained_weights(
 
     return mod
 
+
 def interpolate_patch_embed_1d(patch_embed, target_len, mode="linear"):
     """Resizes patch embeddings using interpolation."""
     return F.interpolate(
@@ -321,18 +322,33 @@ def interpolate_patch_embed_1d(patch_embed, target_len, mode="linear"):
         size=target_len,
         mode=mode,
         align_corners=False,
-    ).permute(0, 2, 1)  # [B, Tokens, C]
+    ).permute(
+        0, 2, 1
+    )  # [B, Tokens, C]
+
 
 def interpolate_patch_embed_3d(patch_embed, in_shape, out_shape):
     """Resizes patch embeddings using 3D trilinear interpolation."""
     patch_embed = patch_embed.permute(0, 2, 1)
     patch_embed = rearrange(patch_embed, "B C (x y z) -> B C x y z", **in_shape)
-    patch_embed = F.interpolate(patch_embed, size=list(out_shape.values()), mode="trilinear", align_corners=False)
+    patch_embed = F.interpolate(
+        patch_embed,
+        size=list(out_shape.values()),
+        mode="trilinear",
+        align_corners=False,
+    )
     patch_embed = rearrange(patch_embed, "B C x y z -> B C (x y z)", **out_shape)
     return patch_embed.permute(0, 2, 1)
 
 
-def handle_pos_embed_resize(pretrained_dict, model_dict, mode, input_shape=None, pretrained_input_patch_size=None, patch_embed_size=None):
+def handle_pos_embed_resize(
+    pretrained_dict,
+    model_dict,
+    mode,
+    input_shape=None,
+    pretrained_input_patch_size=None,
+    patch_embed_size=None,
+):
     pretrained_pos_embed = pretrained_dict["eva.pos_embed"]
     model_pos_embed = model_dict["eva.pos_embed"]
     model_pos_embed_shape = model_pos_embed.shape
@@ -342,23 +358,36 @@ def handle_pos_embed_resize(pretrained_dict, model_dict, mode, input_shape=None,
 
     has_cls_token = "eva.cls_token" in pretrained_dict
 
-
     if has_cls_token:
         cls_pos_embed = pretrained_pos_embed[:, :1, :]
         patch_pos_embed = pretrained_pos_embed[:, 1:, :]
     else:
-        if  "eva.cls_token" in model_dict.keys():
+        if "eva.cls_token" in model_dict.keys():
             cls_pos_embed = model_pos_embed[:, :1, :]
         patch_pos_embed = pretrained_pos_embed
 
     if mode == "interpolate":
-        resized_patch_pos_embed = interpolate_patch_embed_1d(patch_pos_embed, target_len=model_pos_embed_shape[1] - int(has_cls_token))
+        resized_patch_pos_embed = interpolate_patch_embed_1d(
+            patch_pos_embed, target_len=model_pos_embed_shape[1] - int(has_cls_token)
+        )
 
     elif mode == "interpolate_trilinear":
         # Calculate input/output 3D shapes
-        in_shape = dict(zip("xyz", [int(d / p) for d, p in zip(pretrained_input_patch_size, patch_embed_size)]))
-        out_shape = dict(zip("xyz", [int(d / p) for d, p in zip(input_shape, patch_embed_size)]))
-        resized_patch_pos_embed = interpolate_patch_embed_3d(patch_pos_embed, in_shape, out_shape)
+        in_shape = dict(
+            zip(
+                "xyz",
+                [
+                    int(d / p)
+                    for d, p in zip(pretrained_input_patch_size, patch_embed_size)
+                ],
+            )
+        )
+        out_shape = dict(
+            zip("xyz", [int(d / p) for d, p in zip(input_shape, patch_embed_size)])
+        )
+        resized_patch_pos_embed = interpolate_patch_embed_3d(
+            patch_pos_embed, in_shape, out_shape
+        )
 
     else:
         raise NotImplementedError(f"Unknown resize mode: {mode}")
