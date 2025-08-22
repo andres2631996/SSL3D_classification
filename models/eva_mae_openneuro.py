@@ -146,8 +146,8 @@ class Eva_MAE(BaseModel):
                 lora_config = LoraConfig(
                     # task_type=TaskType.IMAGE_CLASSIFICATION,
                     r=8,  # LoRA rank
-                    lora_alpha=16,  # Scaling factor
-                    lora_dropout=0.0,
+                    lora_alpha=32,  # Scaling factor
+                    lora_dropout=0.1,
                     target_modules=["attn.qkv", "attn.proj"],
                 )
 
