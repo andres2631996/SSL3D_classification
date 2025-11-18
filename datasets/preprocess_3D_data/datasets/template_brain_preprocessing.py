@@ -1,9 +1,22 @@
 import sys
 import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
-from datasets.preprocess_3D_data.hd_bet_prediction import hdbet_predict, get_hdbet_predictor
-from datasets.preprocess_3D_data.crop_to_mask import load_image_np, crop_center_with_padding_np, get_mask_center
-from datasets.preprocess_3D_data.default_resampling import resample_data_or_seg_to_spacing, resample_data_or_seg_to_shape
+
+sys.path.append(
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+)
+from datasets.preprocess_3D_data.hd_bet_prediction import (
+    hdbet_predict,
+    get_hdbet_predictor,
+)
+from datasets.preprocess_3D_data.crop_to_mask import (
+    load_image_np,
+    crop_center_with_padding_np,
+    get_mask_center,
+)
+from datasets.preprocess_3D_data.default_resampling import (
+    resample_data_or_seg_to_spacing,
+    resample_data_or_seg_to_shape,
+)
 import numpy as np
 from datasets.preprocess_3D_data.cross_validation import generate_crossval_split
 from multiprocessing import Pool
@@ -34,22 +47,22 @@ def hd_bet_predict(in_folder: str):
     """
     predictor = get_hdbet_predictor(in_folder)
     hdbet_predict(
-        join(in_folder, 'imagesTr'),
-        join(in_folder, 'masks'),
+        join(in_folder, "imagesTr"),
+        join(in_folder, "masks"),
         predictor,
         keep_brain_mask=True,
-        compute_brain_extracted_image=False
+        compute_brain_extracted_image=False,
     )
 
 
 def run_case(
-        base_path: str,
-        img_id: str,
-        target_spacing: Tuple[float, float, float],
-        crop_size: Tuple[int, int, int],
-        output_dir: str,
-        num_modalities: int,
-        brain_extract: bool = True
+    base_path: str,
+    img_id: str,
+    target_spacing: Tuple[float, float, float],
+    crop_size: Tuple[int, int, int],
+    output_dir: str,
+    num_modalities: int,
+    brain_extract: bool = True,
 ) -> None:
     """
     Preprocesses a multi-modal medical image case by resampling to target spacing,
@@ -70,30 +83,46 @@ def run_case(
         - Applies Z-score normalization per modality.
         - Output is saved using Blosc2 compression via `save_case(...)`.
     """
-    base_img_path = join(base_path, 'imagesTr', img_id)
-    mask_path = join(base_path, 'masks', img_id + '_0000_bet.nii.gz')
+    base_img_path = join(base_path, "imagesTr", img_id)
+    mask_path = join(base_path, "masks", img_id + "_0000_bet.nii.gz")
     has_mask = isfile(mask_path)
 
     if has_mask:
         mask_img = sitk.ReadImage(mask_path)
         mask_data = sitk.GetArrayFromImage(mask_img)[np.newaxis, ...]
-        original_spacing = mask_img.GetSpacing()[::-1]  # Convert from (x, y, z) to (z, y, x)
-        mask_1mm = resample_data_or_seg_to_spacing(mask_data, original_spacing, target_spacing, is_seg=True)
+        original_spacing = mask_img.GetSpacing()[
+            ::-1
+        ]  # Convert from (x, y, z) to (z, y, x)
+        mask_1mm = resample_data_or_seg_to_spacing(
+            mask_data, original_spacing, target_spacing, is_seg=True
+        )
         center = get_mask_center(mask_1mm[0])
         resized_mask = crop_center_with_padding_np(mask_1mm[0], center, crop_size)
 
     for mod_id in range(num_modalities):
-        img = sitk.ReadImage(join(base_img_path + f'_000{mod_id}.nii.gz'))
+        img = sitk.ReadImage(join(base_img_path + f"_000{mod_id}.nii.gz"))
         data = sitk.GetArrayFromImage(img)[np.newaxis, ...]
-        data_1mm = resample_data_or_seg_to_spacing(data, original_spacing, target_spacing)
+        original_spacing = img.GetSpacing()[::-1]
+        data_1mm = resample_data_or_seg_to_spacing(
+            data, original_spacing, target_spacing
+        )
 
         if has_mask:
             if brain_extract:
                 data_1mm *= mask_1mm
-            resized_img = crop_center_with_padding_np(data_1mm[0], center, crop_size)[np.newaxis, ...]
+            resized_img = crop_center_with_padding_np(data_1mm[0], center, crop_size)[
+                np.newaxis, ...
+            ]
         else:
-            new_spacing = np.array([i / j * k for i, j, k in zip(target_spacing, crop_size, data_1mm.shape[1:])])
-            resized_img = resample_data_or_seg_to_shape(data_1mm, crop_size, target_spacing, new_spacing)
+            new_spacing = np.array(
+                [
+                    i / j * k
+                    for i, j, k in zip(target_spacing, crop_size, data_1mm.shape[1:])
+                ]
+            )
+            resized_img = resample_data_or_seg_to_shape(
+                data_1mm, crop_size, target_spacing, new_spacing
+            )
 
         normalizer = ZScoreNormalization()
         if has_mask:
@@ -102,18 +131,22 @@ def run_case(
         else:
             data = normalizer.run(resized_img)
 
-        block_size_data, chunk_size_data = comp_blosc2_params(resized_img.shape, crop_size, data.itemsize)
-        out_path_truncated = join(output_dir, f'{img_id}_000{mod_id}')
-        save_case(data, out_path_truncated, chunks=chunk_size_data, blocks=block_size_data)
+        block_size_data, chunk_size_data = comp_blosc2_params(
+            resized_img.shape, crop_size, data.itemsize
+        )
+        out_path_truncated = join(output_dir, f"{img_id}_000{mod_id}")
+        save_case(
+            data, out_path_truncated, chunks=chunk_size_data, blocks=block_size_data
+        )
 
 
 def load_crop_brainextract_normalize_images(
-        in_folder: str,
-        out_folder: str,
-        target_spacing: List[float],
-        patch_size: List[int],
-        brain_extract: bool = True,
-        num_workers: int = 1
+    in_folder: str,
+    out_folder: str,
+    target_spacing: List[float],
+    patch_size: List[int],
+    brain_extract: bool = True,
+    num_workers: int = 1,
 ) -> None:
     """
     Preprocesses all multi-modal brain images in a dataset by performing:
@@ -138,13 +171,13 @@ def load_crop_brainextract_normalize_images(
         RuntimeError: If some image identifiers are missing one or more expected modalities.
     """
     os.makedirs(out_folder, exist_ok=True)
-    all_images = os.listdir(join(in_folder, 'imagesTr'))
+    all_images = os.listdir(join(in_folder, "imagesTr"))
 
     # Get unique image identifiers
-    unique_ids = list(set(re.sub(r'_\d{4}\.nii\.gz$', '', f) for f in all_images))
+    unique_ids = list(set(re.sub(r"_\d{4}\.nii\.gz$", "", f) for f in all_images))
 
     # Collect modality info per identifier
-    pattern = re.compile(r'(.+?)_(\d{4})\.nii\.gz')
+    pattern = re.compile(r"(.+?)_(\d{4})\.nii\.gz")
     modalities = defaultdict(set)
     for f in all_images:
         m = pattern.match(f)
@@ -154,14 +187,24 @@ def load_crop_brainextract_normalize_images(
 
     # Find missing modalities
     expected = set.union(*modalities.values())
-    incomplete = {k: sorted(expected - v) for k, v in modalities.items() if v != expected}
+    incomplete = {
+        k: sorted(expected - v) for k, v in modalities.items() if v != expected
+    }
     if incomplete:
-        msg = '\n'.join(f"{k} missing: {v}" for k, v in incomplete.items())
+        msg = "\n".join(f"{k} missing: {v}" for k, v in incomplete.items())
         raise RuntimeError(f"Some identifiers are missing modalities:\n{msg}")
 
     # Prepare args for parallel case processing
     args_list = [
-        (in_folder, id, target_spacing, patch_size, out_folder, len(expected), brain_extract)
+        (
+            in_folder,
+            id,
+            target_spacing,
+            patch_size,
+            out_folder,
+            len(expected),
+            brain_extract,
+        )
         for id in unique_ids
     ]
 
@@ -170,20 +213,22 @@ def load_crop_brainextract_normalize_images(
 
     # Save splits for cross-validation
     split_file = generate_crossval_split(unique_ids, n_splits=3)
-    with open(os.path.join(out_folder, 'splits.json'), "w") as f:
+    with open(os.path.join(out_folder, "splits.json"), "w") as f:
         json.dump(split_file, f, indent=2)
+
 
 def create_label_dict(path):
     label_dict = load_json(path)
     return label_dict
 
-if __name__ == '__main__':
-    '''
+
+if __name__ == "__main__":
+    """
     1. organize the raw data like nnU-Net: raw folder has a lable dict (# {'unique_id1': 1, ...} and imagesTr with all images files
     case_identifier_0000.nii.gz and _000x.nii.gz for other modallities
     2. potentially use HD-Bet for brain extraction - saved in masks folder (only applied to modallity 0)
     3. resample mask and image to 1mm spacing
     4. crop image to center of mask with a fixed FOV patch size
     5. z-score normalization of resulting crop
-    '''
-    print('this is just an example - check abide_preprocessing.py')
+    """
+    print("this is just an example - check abide_preprocessing.py")
