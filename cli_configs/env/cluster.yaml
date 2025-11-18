@@ -1,6 +1,6 @@
 # @package _global_
-exp_dir: '/dkfz/cluster/gpu/checkpoints/OE0441/c306h//ssl3d_testres/for_eval//'
-data_dir: '/dkfz/cluster/gpu/data/OE0441/c306h/ssl3d_data/classification/preprocessed/'
+exp_dir: '/omics/groups/OE0441/E132-Projekte/Projects/2025_MartinezMora_SSLBrain/results/Dataset006_MRAAneurysmClassification/'
+data_dir: '/omics/groups/OE0441/E132-Projekte/Projects/2025_MartinezMora_SSLBrain/preprocessed_data/Dataset006_MRAAneurysmClassification/'
 
 trainer:
   enable_progress_bar: False

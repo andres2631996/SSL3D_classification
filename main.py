@@ -88,13 +88,13 @@ def main(cfg):
         if cfg_dict["data"]["module"]["train_transforms"] is not None:
             cfg_dict["data"]["module"]["train_transforms"] = ".".join(
                 cfg_dict["data"]["module"]["train_transforms"]["_target_"].split(".")[
-                -2:
+                    -2:
                 ]
             )
         if cfg_dict["data"]["module"]["test_transforms"] is not None:
             cfg_dict["data"]["module"]["test_transforms"] = ".".join(
                 cfg_dict["data"]["module"]["test_transforms"]["_target_"].split(".")[
-                -2:
+                    -2:
                 ]
             )
         cfg_dict["data"]["module"].pop("name")

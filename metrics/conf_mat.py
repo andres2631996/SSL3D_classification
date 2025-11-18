@@ -2,6 +2,9 @@ import lightning.pytorch as pl
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import matplotlib
+
+matplotlib.use("Agg")
 from matplotlib.figure import Figure
 from torchmetrics import Metric
 from torchmetrics.utilities.data import _bincount
@@ -74,7 +77,9 @@ class ConfusionMatrix(Metric):
             Prefix that will be added to ConfusionMatrix, train / val / test
         """
 
-        def mat_to_figure(mat: np.ndarray, name: str = "Confusion matrix", norm_colorbar=False) -> Figure:
+        def mat_to_figure(
+            mat: np.ndarray, name: str = "Confusion matrix", norm_colorbar=False
+        ) -> Figure:
             """
             Parameters
             ----------
@@ -117,10 +122,16 @@ class ConfusionMatrix(Metric):
         figure = mat_to_figure(confmat, "Confusion Matrix")
 
         # Normalized Confusion Matrix
-        confmat_norm = np.around(confmat.astype("float") / confmat.sum(axis=1)[:, np.newaxis], decimals=2)
-        figure_norm = mat_to_figure(confmat_norm, "Confusion Matrix (normalized)", norm_colorbar=True)
+        confmat_norm = np.around(
+            confmat.astype("float") / confmat.sum(axis=1)[:, np.newaxis], decimals=2
+        )
+        figure_norm = mat_to_figure(
+            confmat_norm, "Confusion Matrix (normalized)", norm_colorbar=True
+        )
 
-        for logger in trainer.loggers if hasattr(trainer, "loggers") else [trainer.logger]:
+        for logger in (
+            trainer.loggers if hasattr(trainer, "loggers") else [trainer.logger]
+        ):
             if isinstance(logger, pl.loggers.tensorboard.TensorBoardLogger):
                 logger.experiment.add_figure(
                     "{}_ConfusionMatrix_normalized/ConfusionMatrix".format(split),
