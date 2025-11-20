@@ -35,7 +35,7 @@ trainer:
     project: aneurysm_1mm_160
   enable_checkpointing: True
   accumulate_grad_batches: 48
-  max_epochs: 1000
+  max_epochs: 200
   sync_batchnorm: True
   enable_progress_bar: True
 
