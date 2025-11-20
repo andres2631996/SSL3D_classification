@@ -1,3 +1,3 @@
 # @package _global_
-exp_dir: '/omics/groups/OE0441/E132-Projekte/Projects/2025_MartinezMora_SSLBrain/results/Dataset006_MRAAneurysmClassification'
+exp_dir: '/dkfz/cluster/gpu/checkpoints/OE0441/a870a/det_models/results_classification/Dataset006_MRAAneurysmClassification'
 data_dir: '/dkfz/cluster/gpu/data/OE0441/a870a/det_data/preprocessed_data_classification'
