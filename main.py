@@ -116,6 +116,7 @@ def main(cfg):
             trainer.fit(model, dataset)
 
         wandb.finish()
+        break  # Run only for fold0!!
 
 
 if __name__ == "__main__":
