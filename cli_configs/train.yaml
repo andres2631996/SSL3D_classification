@@ -84,7 +84,7 @@ trainer:
       dirpath: ???
       filename: 'best'
       auto_insert_metric_name: True
-      monitor: 'Val/Loss'
+      monitor: 'Val/loss'
       mode: min
       save_top_k: 1
     last:  # Last checkpoint
