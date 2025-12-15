@@ -140,6 +140,92 @@ def run_case(
         )
 
 
+def run_case_file(
+    base_path: str,
+    img_id: str,
+    target_spacing: Tuple[float, float, float],
+    crop_size: Tuple[int, int, int],
+    output_dir: str,
+    num_modalities: int,
+    brain_extract: bool = True,
+) -> None:
+    """
+    Preprocesses a multi-modal medical image case by resampling to target spacing,
+    optionally applying brain extraction, cropping around the mask center, normalizing,
+    and saving the result as compressed blocks.
+    Get as input the image file, instead of a folder
+
+    Parameters:
+        base_path (str): Base directory containing 'imagesTr' and 'masks' subfolders.
+        img_id (str): Identifier of the image case (e.g., 'case123').
+        target_spacing (Tuple[float, float, float]): Desired spacing for resampling.
+        crop_size (Tuple[int, int, int]): Desired output patch size.
+        output_dir (str): Path to directory where output files will be saved.
+        num_modalities (int): Number of input image modalities (e.g., 4 for BraTS-style input).
+        brain_extract (bool, optional): Whether to use brain mask to extract brain region. Default is True.
+
+    Notes:
+        - If a brain mask (`masks/{img_id}_0000_bet.nii.gz`) is found, it is used for brain extraction and cropping.
+        - Applies Z-score normalization per modality.
+        - Output is saved using Blosc2 compression via `save_case(...)`.
+    """
+    base_img_path = base_path.replace("_0000.nii.gz", "")
+    mask_path = join(base_path, "masks", img_id + "_0000_bet.nii.gz")
+    has_mask = isfile(mask_path)
+
+    if has_mask:
+        mask_img = sitk.ReadImage(mask_path)
+        mask_data = sitk.GetArrayFromImage(mask_img)[np.newaxis, ...]
+        original_spacing = mask_img.GetSpacing()[
+            ::-1
+        ]  # Convert from (x, y, z) to (z, y, x)
+        mask_1mm = resample_data_or_seg_to_spacing(
+            mask_data, original_spacing, target_spacing, is_seg=True
+        )
+        center = get_mask_center(mask_1mm[0])
+        resized_mask = crop_center_with_padding_np(mask_1mm[0], center, crop_size)
+
+    for mod_id in range(num_modalities):
+        img = sitk.ReadImage(join(base_img_path + f"_000{mod_id}.nii.gz"))
+        data = sitk.GetArrayFromImage(img)[np.newaxis, ...]
+        original_spacing = img.GetSpacing()[::-1]
+        data_1mm = resample_data_or_seg_to_spacing(
+            data, original_spacing, target_spacing
+        )
+
+        if has_mask:
+            if brain_extract:
+                data_1mm *= mask_1mm
+            resized_img = crop_center_with_padding_np(data_1mm[0], center, crop_size)[
+                np.newaxis, ...
+            ]
+        else:
+            new_spacing = np.array(
+                [
+                    i / j * k
+                    for i, j, k in zip(target_spacing, crop_size, data_1mm.shape[1:])
+                ]
+            )
+            resized_img = resample_data_or_seg_to_shape(
+                data_1mm, crop_size, target_spacing, new_spacing
+            )
+
+        normalizer = ZScoreNormalization()
+        if has_mask:
+            normalizer.use_mask_for_norm = True
+            data = normalizer.run(resized_img, resized_mask[np.newaxis, ...])
+        else:
+            data = normalizer.run(resized_img)
+
+        block_size_data, chunk_size_data = comp_blosc2_params(
+            resized_img.shape, crop_size, data.itemsize
+        )
+        out_path_truncated = join(output_dir, f"{img_id}_000{mod_id}")
+        save_case(
+            data, out_path_truncated, chunks=chunk_size_data, blocks=block_size_data
+        )
+
+
 def load_crop_brainextract_normalize_images(
     in_folder: str,
     out_folder: str,
